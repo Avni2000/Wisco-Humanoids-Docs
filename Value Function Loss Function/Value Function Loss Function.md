@@ -11,6 +11,8 @@ We'll speak broadly on:
 4. What's the Loss Function, and how does it use all of this?
 5. Where does [Teacher-Student-Setup](Teacher-Student-Setup.md) fit in?
 
+I was also making a [Cheat Sheet](./Cheat-Sheet) for this.
+
 ---
 
 ## Where We Are
@@ -25,8 +27,12 @@ In plain English: the [Policy](../Policy.md) reads the robot's state, outputs ta
 **To be clear** a policy is literally just $12$ numbers. That's it. The policy itself is a neural network,  same structure as in [Multilayer-perceptrons](Multilayer-perceptrons.md):
 
 $$s_t \in \mathbb{R}^{45} \xrightarrow{W_1, b_1} \mathbb{R}^{512} \xrightarrow{f} \xrightarrow{W_2, b_2} \mathbb{R}^{512} \xrightarrow{f} \xrightarrow{W_3, b_3} \mathbb{R}^{12}$$
+> note we didn't approximate $(s_{t},e_{t})$ -- I don't know if I can do that reliably, but that should be the first input.
 
-You run it, you get 12 numbers, you hand them to the PD controller.
+> We explained this in detail in [Policy](../Policy.md) 
+
+
+But you run it, you get 12 numbers, you hand them to the PD controller.
 
 Like all our weights, the policy parameters $\theta$ start random. The robot falls at the start. We need a way to judge whether any given $\theta$ is good or bad, and push it in a better direction. That's the job of the value function and the loss function.
 
@@ -37,12 +43,23 @@ $$(s_t,\ e_t) \xrightarrow{\pi_\theta} q_{\text{target}}$$
 This is the **teacher** policy. It's powerful precisely because $e_t$ makes its job easier. We'll come back to what we do with it once it's trained.
 
 ---
+
+## Quick: What Are Rewards and $e_t$?
+
+The robot gets a **reward** signal every timestep. For walking, it's pretty straightforward: reward is positive when the robot is upright and moving forward, and zero (or negative) when it falls. The simulator gives us this number at every step.
+
+**Why does the policy need to accumulate reward?** Because that's how the robot learns. High reward = good behavior. Low reward = bad behavior. The policy learns to maximize cumulative reward, which means learning to walk.
+
+$e_t$: is the "extra" information the teacher can cheat and use. Things like exact contact forces (which real sensors can only guess from joint angles), ground friction coefficients, and terrain height. These are expensive to compute or require hardware sensors the real robot doesn't have.
+
+---
 ## The Value Function
 
 At any state, ask: **"If the teacher keeps acting under its own policy $\pi_{\text{teacher}}$, how much total reward will it accumulate from here?"**
 
-See the proper [Value Function](Value%20Function) for this.
-### TODO link to Value Function
+See the proper [Value-Function](./Value-Function) for this
+# TODO link to Value Function                                                  
+
 
 That's the value function. It doesn't just mean "some policy." It means *this specific policy, held fixed*. The value function is always defined relative to one particular policy's behavior. $V^{\pi_{\text{teacher}}}$ doesn't mean "this is what will happen," it means **if** the teacher keeps using this exact policy forever from this state, this is the expected total reward. As training progresses and $\theta$ updates, $\pi_{\text{teacher}}$ changes, and so does $V^{\pi_{\text{teacher}}}$. They evolve together.
 
@@ -54,11 +71,13 @@ High value = the robot is in a position where it tends to accumulate a lot of re
 
 **Note why $e_t$ helps here.** If the robot is about to step onto a patch of ice, $V$ trained without $e_t$ can't see that coming, it just has to guess from joint angles and IMU readings. $V$ trained with $e_t$ (the teacher) knows the friction coefficient is 0.1 and can give a much more accurate prediction. Better $V$ = cleaner training signal.
 
-And from [Value Function](../Value%20Function.md), you can't compute the infinite sum directly, you'd have to run the robot forever from every possible state, averaging over all randomness. So instead you **approximate** $V$ with another neural network, the critic $V_\phi$:
+# TODO again value function
+
+And from [Value-Function](../Value-Function.md), you can't compute the infinite sum directly, you'd have to run the robot forever from every possible state, averaging over all randomness. So instead you **approximate** $V$ with another neural network, the critic $V_\phi$:
 
 $$s_t \in \mathbb{R}^{45} \xrightarrow{V_\phi} \mathbb{R}^1$$
 
-I don't honestly know anything about this, but basically same MLP structure as the policy, but outputs one scalar instead of 12. You train it by running the robot in simulation, collecting actual experience, and using observed rewards to correct the network's predictions. That's exactly what the value loss below does.
+I don't honestly know much about this, but basically same MLP structure as the policy, but outputs one scalar instead of 12. You train it by running the robot in simulation, collecting actual experience, and using observed rewards to correct the network's predictions. That's exactly what the value loss below does.
 
 ---
 
@@ -68,10 +87,10 @@ Once you have $V$, you can ask a sharper question: was the action actually taken
 
 $$A_t = R_t - V(s_t, e_t)$$
 
-where $R_t$ is the actual return (reward collected going forward from $t$).
+where $R_t$ is the actual return: all the rewards the robot actually collected from timestep $t$ onward for the rest of the episode.
 
-- $A_t > 0$: the action led to more reward than predicted — do it more
-- $A_t < 0$: the action led to less reward than predicted — do it less
+- $A_t > 0$: the action led to more reward than predicted: do it more
+- $A_t < 0$: the action led to less reward than predicted: do it less
 
 This is the signal that drives policy improvement. Without $V$, you only know whether an episode went well overall. With $V$, you know which specific decisions inside the episode were good or bad.
 
@@ -79,17 +98,22 @@ This is the signal that drives policy improvement. Without $V$, you only know wh
 
 ## The Loss Function
 
+We're FINALLY at where we need to be to explain the value function's loss function.
+
 Training optimizes two things simultaneously:
 
 **Policy loss**: push $\theta$ to take actions with positive advantage:
 
 $$\mathcal{L}_{\text{policy}} = -\mathbb{E}_t\left[A_t \cdot \log \pi_\theta(a_t \mid s_t, e_t)\right]$$
+> Note $\mathbb{E}_{t}$ is the "average over all timesteps $t$ in your collected experience"
+> $A_{t}$
+
 
 Minimizing this increases the probability of actions that beat expectations and decreases the probability of actions that underperform.
 
 **Value loss**: make $V$ an accurate predictor:
 
-$$\mathcal{L}_{\text{value}} = \mathbb{E}_t\left[(V_\theta(s_t, e_t) - R_t)^2\right]$$
+$$\mathcal{L}_{\text{value}} = \mathbb{E}_t\left[(V_\phi(s_t, e_t) - R_t)^2\right]$$
 
 If $V$ is inaccurate, the advantage estimates are noisy, and the policy update is unreliable. So you train $V$ alongside $\pi$.
 
