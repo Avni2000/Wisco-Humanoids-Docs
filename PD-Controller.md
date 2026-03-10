@@ -24,9 +24,7 @@ $$F = K_p(x_{\text{target}} - x) - K_d \dot{x}$$
 
 The $-K_d \dot{x}$ term says: **if you're moving fast, brake**. It doesn't care where you are, only how fast you're moving and in what direction.
 
-$$
-\dot{x} = \frac{dx}{dt}, \text{ or the derivative w.r.t time.}
-$$
+$$\dot{x} = \frac{dx}{dt}, \text{ or the derivative w.r.t time.}$$
 Recall from Calc I that if $x$ is position, then $\dot{x}$ is simply velocity.
 
 Together:
