@@ -1,0 +1,7 @@
+- Define teacher-student vs. actor-critic
+	- the relationship
+		- ties to RL vs Supervised
+		-  value function vs. learning policy
+- What's the difference between the value function and learning policy?
+	- Is one just for the teacher?
+- CLEARLY define output
